@@ -3,6 +3,7 @@ pragma solidity 0.8.17;
 
 import {ISimpleSwap} from "./interface/ISimpleSwap.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract SimpleSwap is ISimpleSwap, ERC20 {
     // Implement core logic here
@@ -37,15 +38,30 @@ contract SimpleSwap is ISimpleSwap, ERC20 {
 
     function addLiquidity(uint256 amountAIn, uint256 amountBIn)
         external
-        returns (uint256 amountA, uint256 amountB, uint256 liquidity)
+        returns (uint256 amountA, uint256 amountB, uint256)
     {
+        require(amountAIn > 0 && amountBIn > 0, "SimpleSwap: INSUFFICIENT_INPUT_AMOUNT");
         ERC20(tokenA).transferFrom(msg.sender, address(this), amountAIn);
         ERC20(tokenB).transferFrom(msg.sender, address(this), amountBIn);
-        return (amountAIn, amountBIn, 0);
+
+        uint256 liquidity = Math.sqrt(amountAIn * amountBIn);
+        _mint(msg.sender, liquidity);
+        emit AddLiquidity(msg.sender, amountAIn, amountBIn, liquidity);
+
+        return (amountAIn, amountBIn, liquidity);
     }
 
     function removeLiquidity(uint256 liquidity) external returns (uint256 amountA, uint256 amountB) {
-        return (0, 0);
+        require(liquidity > 0, "SimpleSwap: INSUFFICIENT_LIQUIDITY_BURNED");
+        (uint256 reserveA, uint256 reserveB) = this.getReserves();
+        amountA = reserveA * liquidity / totalSupply();
+        amountB = reserveB * liquidity / totalSupply();
+        ERC20(tokenA).transfer(msg.sender, amountA);
+        ERC20(tokenB).transfer(msg.sender, amountB);
+     
+        _burn(msg.sender, liquidity);
+        emit Transfer(msg.sender, address(0), liquidity);
+        emit RemoveLiquidity(msg.sender, liquidity, amountA, amountB);
     }
 
     function getReserves() external view returns (uint256 reserveA, uint256 reserveB) {
