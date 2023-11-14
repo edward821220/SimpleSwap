@@ -4,7 +4,6 @@ pragma solidity 0.8.17;
 import {ISimpleSwap} from "./interface/ISimpleSwap.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import "forge-std/console2.sol";
 
 contract SimpleSwap is ISimpleSwap, ERC20 {
     // Implement core logic here
@@ -29,10 +28,20 @@ contract SimpleSwap is ISimpleSwap, ERC20 {
         require(tokenOut == tokenA || tokenOut == tokenB, "SimpleSwap: INVALID_TOKEN_OUT");
         require(tokenIn != tokenOut, "SimpleSwap: IDENTICAL_ADDRESS");
         require(amountIn > 0, "SimpleSwap: INSUFFICIENT_INPUT_AMOUNT");
-        uint256 amountOut = amountIn / 2;
-        if (amountOut > balanceOf(address(this))) {
-            amountOut = balanceOf(address(this));
+
+        (uint256 reserveA, uint256 reserveB) = this.getReserves();
+        uint256 amountOut;
+
+        if (tokenIn == tokenA) {
+            uint256 numerator = amountIn * reserveB;
+            uint256 denominator = reserveA + amountIn;
+            amountOut = numerator / denominator;
+        } else {
+            uint256 numerator = amountIn * reserveA;
+            uint256 denominator = reserveB + amountIn;
+            amountOut = numerator / denominator;
         }
+
         ERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
         ERC20(tokenOut).transfer(msg.sender, amountOut);
         emit Swap(msg.sender, tokenIn, tokenOut, amountIn, amountOut);
