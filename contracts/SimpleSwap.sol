@@ -4,6 +4,7 @@ pragma solidity 0.8.17;
 import {ISimpleSwap} from "./interface/ISimpleSwap.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import "forge-std/console2.sol";
 
 contract SimpleSwap is ISimpleSwap, ERC20 {
     // Implement core logic here
@@ -23,30 +24,51 @@ contract SimpleSwap is ISimpleSwap, ERC20 {
         }
     }
 
-    function swap(address tokenIn, address tokenOut, uint256 amountIn) external returns (uint256 amountOut) {
+    function swap(address tokenIn, address tokenOut, uint256 amountIn) external returns (uint256) {
         require(tokenIn == tokenA || tokenIn == tokenB, "SimpleSwap: INVALID_TOKEN_IN");
         require(tokenOut == tokenA || tokenOut == tokenB, "SimpleSwap: INVALID_TOKEN_OUT");
         require(tokenIn != tokenOut, "SimpleSwap: IDENTICAL_ADDRESS");
         require(amountIn > 0, "SimpleSwap: INSUFFICIENT_INPUT_AMOUNT");
-
-        amountOut = amountIn / 2;
-
+        uint256 amountOut = amountIn / 2;
+        if (amountOut > balanceOf(address(this))) {
+            amountOut = balanceOf(address(this));
+        }
         ERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
         ERC20(tokenOut).transfer(msg.sender, amountOut);
         emit Swap(msg.sender, tokenIn, tokenOut, amountIn, amountOut);
+        return amountOut;
     }
 
-    function addLiquidity(uint256 amountAIn, uint256 amountBIn)
-        external
-        returns (uint256 amountA, uint256 amountB, uint256)
-    {
+    function addLiquidity(uint256 amountAIn, uint256 amountBIn) external returns (uint256, uint256, uint256) {
         require(amountAIn > 0 && amountBIn > 0, "SimpleSwap: INSUFFICIENT_INPUT_AMOUNT");
-        ERC20(tokenA).transferFrom(msg.sender, address(this), amountAIn);
-        ERC20(tokenB).transferFrom(msg.sender, address(this), amountBIn);
-
-        uint256 liquidity = Math.sqrt(amountAIn * amountBIn);
+        uint256 amountA;
+        uint256 amountB;
+        uint256 liquidity;
+        (uint256 reserveA, uint256 reserveB) = this.getReserves();
+        // 如果是第一次添加流動性就直接用 amountIn 的量
+        if (totalSupply() == 0) {
+            amountA = amountAIn;
+            amountB = amountBIn;
+            liquidity = Math.sqrt(amountA * amountB);
+        } else {
+            if (amountAIn * reserveB == reserveA * amountBIn) {
+                amountA = amountAIn;
+                amountB = amountBIn;
+            } else if (amountAIn * reserveB < reserveA * amountBIn) {
+                amountA = amountAIn;
+                amountB = amountAIn * reserveB / reserveA;
+            } else if (amountAIn * reserveB > reserveA * amountBIn) {
+                amountA = amountBIn * reserveA / reserveB;
+                amountB = amountBIn;
+            }
+            uint256 liquidityA = (amountAIn * totalSupply()) / reserveA;
+            uint256 liquidityB = (amountBIn * totalSupply()) / reserveB;
+            liquidity = (liquidityA < liquidityB) ? liquidityA : liquidityB;
+        }
+        ERC20(tokenA).transferFrom(msg.sender, address(this), amountA);
+        ERC20(tokenB).transferFrom(msg.sender, address(this), amountB);
         _mint(msg.sender, liquidity);
-        emit AddLiquidity(msg.sender, amountAIn, amountBIn, liquidity);
+        emit AddLiquidity(msg.sender, amountA, amountB, liquidity);
 
         return (amountAIn, amountBIn, liquidity);
     }
@@ -58,9 +80,9 @@ contract SimpleSwap is ISimpleSwap, ERC20 {
         amountB = reserveB * liquidity / totalSupply();
         ERC20(tokenA).transfer(msg.sender, amountA);
         ERC20(tokenB).transfer(msg.sender, amountB);
-     
-        _burn(msg.sender, liquidity);
-        emit Transfer(msg.sender, address(0), liquidity);
+
+        this.transferFrom(msg.sender, address(this), liquidity);
+        _burn(address(this), liquidity);
         emit RemoveLiquidity(msg.sender, liquidity, amountA, amountB);
     }
 
